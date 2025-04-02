@@ -535,20 +535,36 @@ def render_next_server_predictions(df, color_scheme):
         with col1:
             # Visualisasi prediksi
             st.subheader("Visualisasi Pembukaan Server Berikutnya")
-
+    
             # Buat data gabungan untuk visualisasi
             df_sorted = df.sort_values('OpenDateTime')
-
+    
             # Ambil 30 server terakhir
             recent_servers = df_sorted.tail(30).copy()
             recent_servers['Type'] = 'Historis'
-
+    
             # Siapkan data prediksi
             pred_servers = next_servers.copy()
             pred_servers['OpenDateTime'] = pd.to_datetime(pred_servers['Tanggal'] + ' ' + pred_servers['Jam'])
+            
+            # PERBAIKAN: Pastikan keduanya memiliki status timezone yang sama
+            # Jika df historis memiliki timezone, tambahkan timezone yang sama ke prediksi
+            if hasattr(recent_servers['OpenDateTime'].iloc[0], 'tz') and recent_servers['OpenDateTime'].iloc[0].tz is not None:
+                # Ambil timezone dari data historis
+                hist_tz = recent_servers['OpenDateTime'].iloc[0].tz
+                # Terapkan ke data prediksi
+                pred_servers['OpenDateTime'] = pred_servers['OpenDateTime'].dt.tz_localize(hist_tz)
+            # Jika df historis tidak memiliki timezone, hapus timezone dari prediksi jika ada
+            else:
+                # Pastikan data historis tidak memiliki timezone
+                recent_servers['OpenDateTime'] = recent_servers['OpenDateTime'].dt.tz_localize(None)
+                # Pastikan data prediksi juga tidak memiliki timezone
+                if hasattr(pred_servers['OpenDateTime'].iloc[0], 'tz') and pred_servers['OpenDateTime'].iloc[0].tz is not None:
+                    pred_servers['OpenDateTime'] = pred_servers['OpenDateTime'].dt.tz_localize(None)
+                    
             pred_servers['Type'] = 'Prediksi'
-
-            # Gabungkan data
+    
+            # Gabungkan data (sekarang timezone sudah konsisten)
             vis_data = pd.concat([
                 recent_servers[['ServerId', 'OpenDateTime', 'Type']],
                 pred_servers[['ServerId', 'OpenDateTime', 'Type']]
