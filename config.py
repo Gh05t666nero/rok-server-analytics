@@ -34,6 +34,12 @@ DATA_CONFIG = {
     "fallback_path": "data/fallback_data.json"  # Path untuk data fallback
 }
 
+# Konfigurasi zona waktu
+TIME_CONFIG = {
+    "timezone": "Asia/Jakarta",  # Zona waktu WIB
+    "datetime_format": "%d %b %Y %H:%M"  # Format tanggal dan waktu
+}
+
 # App config
 APP_CONFIG = {
     "title": "Analisis Server Rise of Kingdoms",
