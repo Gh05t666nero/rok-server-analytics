@@ -6,6 +6,8 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
 import warnings
+import pytz
+from config import TIME_CONFIG
 
 warnings.filterwarnings("ignore")
 
@@ -152,6 +154,10 @@ def predict_next_servers(df, num_servers=5):
         # Prediksi server berikutnya
         next_servers = []
 
+        # Dapatkan waktu sekarang di zona waktu WIB
+        wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+        current_time_wib = pd.Timestamp.now(tz=wib_timezone)
+
         for i in range(1, num_servers + 1):
             next_server_id = last_server_id + i
 
@@ -176,8 +182,8 @@ def predict_next_servers(df, num_servers=5):
             map_index = (next_server_id - 1) % len(map_types)
             next_map_type = map_types[map_index]
 
-            # Hitung waktu hingga pembukaan
-            time_until_opening = next_open_datetime - pd.Timestamp.now()
+            # Hitung waktu hingga pembukaan menggunakan waktu WIB
+            time_until_opening = next_open_datetime - current_time_wib
             days_until = time_until_opening.days
             hours_until = time_until_opening.seconds // 3600
 
