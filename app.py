@@ -17,9 +17,6 @@ from components.predictions import render_prediction_tab
 from styles.custom_styles import apply_custom_styles
 from config import TIME_CONFIG
 
-# Atur zona waktu untuk Pandas
-pd.options.display.timezone = TIME_CONFIG["timezone"]
-
 # Konfigurasi halaman
 st.set_page_config(
     page_title="Analisis Server Rise of Kingdoms",
