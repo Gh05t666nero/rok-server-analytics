@@ -2,6 +2,7 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
+import pytz
 
 # Import modul kustom
 from utils.data_loader import load_data_from_api
@@ -14,6 +15,10 @@ from components.time_analysis import render_time_analysis_tab
 from components.map_analysis import render_map_analysis_tab
 from components.predictions import render_prediction_tab
 from styles.custom_styles import apply_custom_styles
+from config import TIME_CONFIG
+
+# Atur zona waktu untuk Pandas
+pd.options.display.timezone = TIME_CONFIG["timezone"]
 
 # Konfigurasi halaman
 st.set_page_config(
@@ -28,6 +33,10 @@ apply_custom_styles()
 # Header aplikasi
 st.markdown('<p class="main-header">Analisis Server Rise of Kingdoms</p>', unsafe_allow_html=True)
 
+# Dapatkan waktu sekarang di zona waktu WIB
+wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+current_time_wib = datetime.now(wib_timezone)
+
 # Navigasi dengan penjelasan
 st.markdown("<div class='nav-section'>", unsafe_allow_html=True)
 st.markdown(f"""
@@ -38,7 +47,7 @@ st.markdown(f"""
     </div>
     <div style="background-color: rgba(0,0,0,0.2); padding: 8px 16px; border-radius: 8px; display: inline-block;">
         <span style="color: #03DAC6; font-weight: 500;">Update terakhir:</span> 
-        <span style="color: #E0E0E0;">{datetime.now().strftime('%d %b %Y %H:%M')}</span>
+        <span style="color: #E0E0E0;">{current_time_wib.strftime(TIME_CONFIG['datetime_format'])}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -276,8 +285,12 @@ def create_main_tabs(df, filtered_df, color_scheme):
 
 def display_footer():
     """Menampilkan footer aplikasi."""
+    # Dapatkan waktu sekarang di zona waktu WIB
+    wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+    current_time_wib = datetime.now(wib_timezone)
+    
     st.markdown('<div class="footer">', unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(f"""
     <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
         <div style="font-weight: 500; color: #BB86FC;">Dashboard Analisis Server Rise of Kingdoms</div>
         <div style="display: flex; align-items: center; gap: 16px; margin: 8px 0;">
@@ -291,7 +304,7 @@ def display_footer():
                 <span style="color: #03DAC6;">🔍</span> Data dari API Game
             </div>
         </div>
-        <div>© 2025 - Semua Hak Dilindungi</div>
+        <div>© {current_time_wib.year} - Semua Hak Dilindungi</div>
     </div>
     """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
