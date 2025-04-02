@@ -2,6 +2,8 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import pytz
+from config import TIME_CONFIG
 
 
 @st.cache_data(ttl=1800)  # Cache untuk 30 menit
@@ -54,8 +56,12 @@ def _validate_data_structure(data):
 
 def _process_time_data(df):
     """Proses data waktu dan tambahkan kolom waktu yang relevan."""
-    # Konversi OpenTime ke datetime
-    df['OpenDateTime'] = pd.to_datetime(df['OpenTime'], unit='s')
+    # Dapatkan timezone WIB
+    wib_tz = pytz.timezone(TIME_CONFIG["timezone"])
+    
+    # Konversi OpenTime ke datetime dengan timezone WIB
+    # Timestamp dari API biasanya dalam UTC
+    df['OpenDateTime'] = pd.to_datetime(df['OpenTime'], unit='s').dt.tz_localize('UTC').dt.tz_convert(wib_tz)
 
     # Ekstrak komponen tanggal
     df['OpenDate'] = df['OpenDateTime'].dt.date
@@ -135,7 +141,10 @@ def filter_dataframe(df, filters):
 
     # Filter preset waktu
     if 'time_preset' in filters and filters['time_preset'] != "Semua Waktu":
-        current_date = pd.Timestamp.now()
+        # Dapatkan waktu sekarang di zona waktu WIB
+        wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+        current_date = pd.Timestamp.now(tz=wib_timezone)
+        
         if filters['time_preset'] == "30 Hari Terakhir":
             start_date = current_date - pd.Timedelta(days=30)
             filtered_df = filtered_df[filtered_df['OpenDateTime'] >= start_date]
