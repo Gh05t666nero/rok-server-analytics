@@ -3,9 +3,10 @@ import os
 import json
 import requests
 import streamlit as st
-from config import API_CONFIG, DATA_CONFIG
+from config import API_CONFIG, DATA_CONFIG, TIME_CONFIG
 import pandas as pd
 from datetime import datetime
+import pytz
 
 
 @st.cache_data(ttl=DATA_CONFIG["cache_ttl"])
@@ -55,11 +56,15 @@ def save_fallback_data(data):
         # Buat direktori jika belum ada
         os.makedirs(os.path.dirname(DATA_CONFIG["fallback_path"]), exist_ok=True)
 
+        # Dapatkan waktu saat ini dalam WIB
+        wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+        current_time_wib = datetime.now(wib_timezone)
+
         # Simpan data dengan timestamp
         with open(DATA_CONFIG["fallback_path"], 'w', encoding='utf-8') as f:
             json.dump({
                 "data": data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": current_time_wib.isoformat()
             }, f, ensure_ascii=False, indent=4)
     except Exception as e:
         st.warning(f"Tidak dapat menyimpan data fallback: {e}")
