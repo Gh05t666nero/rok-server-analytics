@@ -1,0 +1,297 @@
+# utils/data_processor.py
+import pandas as pd
+import numpy as np
+import streamlit as st
+import pytz
+import logging
+from config import TIME_CONFIG
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+@st.cache_data(ttl=1800)  # Cache untuk 30 menit
+def process_server_data(data):
+    """
+    Memproses data server mentah dari API menjadi DataFrame yang siap untuk analisis.
+
+    Parameters:
+        data (dict): Data server mentah dari API
+
+    Returns:
+        pandas.DataFrame: DataFrame yang telah diproses, atau None jika data tidak valid
+    """
+    if not _validate_data_structure(data):
+        st.error("Struktur data tidak valid. Mohon coba lagi nanti.")
+        return None
+
+    try:
+        servers = data["1"]["Servers"]
+        df = pd.DataFrame(servers)
+
+        # Validasi kolom yang dibutuhkan
+        required_columns = ['ServerId', 'OpenTime', 'MapType', 'DistrictId']
+        if not all(col in df.columns for col in required_columns):
+            st.error("Data tidak memiliki semua kolom yang diperlukan")
+            return None
+
+        # Konversi dan ekstraksi data waktu
+        df = _process_time_data(df)
+
+        # Bersihkan dan standarisasi data
+        df = _clean_data(df)
+
+        # Tambahkan kolom turunan untuk analisis
+        df = _add_derived_features(df)
+
+        return df
+    except Exception as e:
+        logger.error(f"Error processing server data: {e}", exc_info=True)
+        st.error(f"Terjadi kesalahan saat memproses data: {str(e)}")
+        return None
+
+
+def _validate_data_structure(data):
+    """Validasi struktur dasar data API."""
+    return (
+            data is not None and
+            isinstance(data, dict) and
+            "1" in data and
+            "Servers" in data["1"] and
+            isinstance(data["1"]["Servers"], list) and
+            len(data["1"]["Servers"]) > 0
+    )
+
+
+def _process_time_data(df):
+    """Proses data waktu dan tambahkan kolom waktu yang relevan."""
+    try:
+        # Dapatkan timezone WIB
+        wib_tz = pytz.timezone(TIME_CONFIG["timezone"])
+
+        # Konversi OpenTime ke datetime dengan timezone WIB
+        # Timestamp dari API biasanya dalam UTC
+        df['OpenTime'] = pd.to_numeric(df['OpenTime'], errors='coerce')
+        df['OpenDateTime'] = pd.to_datetime(df['OpenTime'], unit='s', errors='coerce').dt.tz_localize(
+            'UTC').dt.tz_convert(wib_tz)
+
+        # Ekstrak komponen tanggal
+        df['OpenDate'] = df['OpenDateTime'].dt.date
+        df['Year'] = df['OpenDateTime'].dt.year
+        df['Month'] = df['OpenDateTime'].dt.month
+        df['MonthName'] = df['OpenDateTime'].dt.strftime('%B')
+        df['MonthYear'] = df['OpenDateTime'].dt.strftime('%Y-%m')
+        df['WeekDay'] = df['OpenDateTime'].dt.day_name()
+        df['DayOfWeek'] = df['OpenDateTime'].dt.dayofweek
+        df['Quarter'] = df['OpenDateTime'].dt.quarter
+        df['Hour'] = df['OpenDateTime'].dt.hour
+
+        return df
+    except Exception as e:
+        logger.error(f"Error processing time data: {e}")
+        # Return original dataframe if processing fails
+        return df
+
+
+def _clean_data(df):
+    """Bersihkan dan standarisasi data."""
+    try:
+        # Handle missing values
+        if 'MapType' in df.columns:
+            df['MapType'] = df['MapType'].fillna('Unknown')
+
+        # Ensure consistent data types
+        if 'ServerId' in df.columns:
+            df['ServerId'] = pd.to_numeric(df['ServerId'], errors='coerce').fillna(0).astype(int)
+
+        if 'DistrictId' in df.columns:
+            # Convert to numeric first, then to integer
+            df['DistrictId'] = pd.to_numeric(df['DistrictId'], errors='coerce').fillna(0).astype(int)
+
+        # Handle other columns that might cause serialization issues
+        int_columns = ['IsNew', 'Status', 'ContinentId']
+        for col in int_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+
+        bool_columns = ['IsVisible', 'CanRelocate', 'AllowLifeRelocate', 'FogOpen']
+        for col in bool_columns:
+            if col in df.columns:
+                df[col] = df[col].astype(bool)
+
+        return df
+    except Exception as e:
+        logger.error(f"Error cleaning data: {e}")
+        # Return original dataframe if cleaning fails
+        return df
+
+
+def _add_derived_features(df):
+    """Tambahkan fitur turunan untuk analisis lanjutan."""
+    try:
+        # Hitung hari sejak server pertama dibuka
+        if 'OpenDateTime' in df.columns:
+            first_server_date = df['OpenDateTime'].min()
+            df['DaysSinceFirstServer'] = (df['OpenDateTime'] - first_server_date).dt.days
+
+        # Kelompokkan server berdasarkan tahun dan bulan pembukaan
+        df['YearMonthGroup'] = df['Year'].astype(str) + '-' + df['Month'].astype(str).str.zfill(2)
+
+        # Kategorikan jenis peta untuk analisis yang lebih mudah
+        if 'MapType' in df.columns:
+            # Ekstrak nomor versi peta dari nama lengkap
+            df['MapVersion'] = df['MapType'].str.extract(r'G1_(\d+)')
+
+        return df
+    except Exception as e:
+        logger.error(f"Error adding derived features: {e}")
+        # Return original dataframe if feature addition fails
+        return df
+
+
+def filter_dataframe(df, filters):
+    """
+    Filter DataFrame berdasarkan kriteria yang diberikan
+
+    Parameters:
+        df (pandas.DataFrame): DataFrame yang akan difilter
+        filters (dict): Kriteria filter
+
+    Returns:
+        pandas.DataFrame: DataFrame yang telah difilter
+    """
+    try:
+        filtered_df = df.copy()
+
+        # Filter jenis peta
+        if 'map_type' in filters and filters['map_type'] != 'Semua':
+            filtered_df = filtered_df[filtered_df['MapType'] == filters['map_type']]
+
+        # Filter tahun
+        if 'year' in filters and filters['year'] != 'Semua':
+            filtered_df = filtered_df[filtered_df['Year'] == filters['year']]
+
+        # Filter rentang tanggal
+        if 'date_range' in filters and isinstance(filters['date_range'], tuple) and len(filters['date_range']) == 2:
+            start_date, end_date = filters['date_range']
+            filtered_df = filtered_df[(filtered_df['OpenDate'] >= start_date) &
+                                      (filtered_df['OpenDate'] <= end_date)]
+
+        # Filter preset waktu
+        if 'time_preset' in filters and filters['time_preset'] != "Semua Waktu":
+            # Dapatkan waktu sekarang di zona waktu WIB
+            wib_timezone = pytz.timezone(TIME_CONFIG["timezone"])
+            current_date = pd.Timestamp.now(tz=wib_timezone)
+
+            if filters['time_preset'] == "30 Hari Terakhir":
+                start_date = current_date - pd.Timedelta(days=30)
+                filtered_df = filtered_df[filtered_df['OpenDateTime'] >= start_date]
+            elif filters['time_preset'] == "90 Hari Terakhir":
+                start_date = current_date - pd.Timedelta(days=90)
+                filtered_df = filtered_df[filtered_df['OpenDateTime'] >= start_date]
+            elif filters['time_preset'] == "1 Tahun Terakhir":
+                start_date = current_date - pd.Timedelta(days=365)
+                filtered_df = filtered_df[filtered_df['OpenDateTime'] >= start_date]
+
+        return filtered_df
+    except Exception as e:
+        logger.error(f"Error filtering dataframe: {e}")
+        # Return original dataframe if filtering fails
+        return df
+
+
+def prepare_time_series_data(df):
+    """
+    Menyiapkan data untuk analisis time series
+
+    Parameters:
+        df (pandas.DataFrame): DataFrame dengan data server
+
+    Returns:
+        tuple: (daily_data, monthly_data) untuk analisis time series
+    """
+    try:
+        # Data harian
+        daily = df.groupby('OpenDate').size().reset_index(name='Count')
+        daily.columns = ['Date', 'Count']
+        daily['Date'] = pd.to_datetime(daily['Date'])
+
+        # Isi hari yang hilang dengan nol
+        date_range = pd.date_range(start=daily['Date'].min(), end=daily['Date'].max())
+        date_df = pd.DataFrame({'Date': date_range})
+        daily_complete = pd.merge(date_df, daily, on='Date', how='left').fillna(0)
+
+        # Data bulanan
+        monthly = df.groupby(pd.Grouper(key='OpenDateTime', freq='MS')).size().reset_index(name='Count')
+        monthly.columns = ['Date', 'Count']
+
+        # Isi bulan yang hilang
+        month_range = pd.date_range(start=monthly['Date'].min(), end=monthly['Date'].max(), freq='MS')
+        month_df = pd.DataFrame({'Date': month_range})
+        monthly_complete = pd.merge(month_df, monthly, on='Date', how='left').fillna(0)
+
+        return daily_complete, monthly_complete
+    except Exception as e:
+        logger.error(f"Error preparing time series data: {e}")
+        # Return empty frames if preparation fails
+        empty_df = pd.DataFrame({'Date': pd.to_datetime([]), 'Count': []})
+        return empty_df, empty_df
+
+
+def calculate_statistics(df):
+    """
+    Menghitung statistik penting untuk dashboard
+
+    Parameters:
+        df (pandas.DataFrame): DataFrame dengan data server
+
+    Returns:
+        dict: Statistik penting
+    """
+    try:
+        stats = {}
+
+        # Total server
+        stats['total_servers'] = len(df)
+
+        # Tanggal server pertama dan terakhir
+        stats['first_server_date'] = df['OpenDateTime'].min()
+        stats['last_server_date'] = df['OpenDateTime'].max()
+
+        # Hari sejak server pertama
+        days_since_first = (df['OpenDateTime'].max() - df['OpenDateTime'].min()).days
+        stats['days_since_first'] = days_since_first
+
+        # Rata-rata hari antar server
+        stats['avg_days_per_server'] = days_since_first / len(df) if len(df) > 1 else 0
+
+        # Jumlah jenis peta
+        stats['map_types_count'] = df['MapType'].nunique()
+
+        # Jenis peta paling umum
+        stats['most_common_map'] = df['MapType'].value_counts().idxmax()
+
+        # Hari paling umum untuk pembukaan server
+        stats['most_common_day'] = df['WeekDay'].value_counts().idxmax()
+
+        # Statistik pembukaan bulanan
+        monthly_counts = df.groupby(['Year', 'Month']).size()
+        stats['max_monthly_servers'] = monthly_counts.max()
+        stats['avg_monthly_servers'] = monthly_counts.mean()
+
+        return stats
+    except Exception as e:
+        logger.error(f"Error calculating statistics: {e}")
+        # Return empty stats if calculation fails
+        return {
+            'total_servers': 0,
+            'first_server_date': pd.Timestamp.now(),
+            'last_server_date': pd.Timestamp.now(),
+            'days_since_first': 0,
+            'avg_days_per_server': 0,
+            'map_types_count': 0,
+            'most_common_map': 'Unknown',
+            'most_common_day': 'Unknown',
+            'max_monthly_servers': 0,
+            'avg_monthly_servers': 0
+        }
